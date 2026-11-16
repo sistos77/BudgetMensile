@@ -151,9 +151,28 @@
         </div>
       </div>
 
-      <!-- Tabella Transazioni -->
-      <div class="bg-dark-card p-5 rounded-2xl border border-gray-800">
-        <h3 class="text-lg font-bold mb-4 text-gray-200">Storico Transazioni</h3>
+      <!-- Tabella Transazioni con Ricerca -->
+      <div class="bg-dark-card p-5 rounded-2xl border border-gray-800 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <h3 class="text-lg font-bold text-gray-200">Storico Transazioni</h3>
+          <div class="relative w-full sm:w-72">
+            <input 
+              type="text" 
+              id="searchTxInput" 
+              oninput="renderDashboard()" 
+              placeholder="Cerca per nota, categoria, importo..." 
+              class="w-full bg-gray-900 border border-gray-700 rounded-lg pl-3 pr-8 py-2 text-xs sm:text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#bf00ff] transition"
+            >
+            <button 
+              type="button" 
+              id="btnClearSearch" 
+              onclick="clearSearch()" 
+              class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#ff007f] text-sm font-bold"
+              title="Cancella ricerca"
+            >&times;</button>
+          </div>
+        </div>
+
         <div class="overflow-x-auto">
           <table class="w-full text-left text-sm">
             <thead class="bg-gray-900 text-gray-400 uppercase text-xs border-b border-gray-800">
@@ -186,6 +205,10 @@
         <h3 class="text-lg font-bold text-gray-200">Gestione Dati & Backup</h3>
         <div class="flex flex-wrap gap-3">
           <button onclick="exportJSON()" class="bg-gray-800 border border-purple-500 text-[#bf00ff] font-semibold px-4 py-2 rounded-lg hover:bg-gray-700">Esporta JSON (Backup)</button>
+          
+          <button onclick="document.getElementById('importJsonInput').click()" class="bg-gray-800 border border-orange-500 text-[#ff6600] font-semibold px-4 py-2 rounded-lg hover:bg-gray-700">Importa JSON (Ripristina)</button>
+          <input type="file" id="importJsonInput" accept=".json,application/json" onchange="importJSON(event)" class="hidden">
+
           <button onclick="exportCSV()" class="bg-gray-800 border border-green-500 text-[#39ff14] font-semibold px-4 py-2 rounded-lg hover:bg-gray-700">Esporta CSV (Excel)</button>
           <button onclick="resetCategories()" class="bg-gray-800 border border-yellow-500 text-[#ccff00] font-semibold px-4 py-2 rounded-lg hover:bg-gray-700">Ripristina Categorie Default</button>
         </div>
@@ -373,7 +396,6 @@
       document.getElementById('txDate').value = tx.date;
       document.getElementById('txNote').value = tx.note || '';
 
-      // Aggiorna grafica del form per modalità modifica
       const formContainer = document.getElementById('formContainer');
       const formTitle = document.getElementById('formTitle');
       const btnSubmit = document.getElementById('btnSubmitTx');
@@ -448,6 +470,12 @@
       renderDashboard();
     }
 
+    function clearSearch() {
+      const s = document.getElementById('searchTxInput');
+      if (s) s.value = '';
+      renderDashboard();
+    }
+
     function saveAndRender() {
       try {
         localStorage.setItem('bg_transactions', JSON.stringify(state.transactions));
@@ -458,10 +486,23 @@
     function renderDashboard() {
       const fromEl = document.getElementById('filterFrom');
       const toEl = document.getElementById('filterTo');
+      const searchEl = document.getElementById('searchTxInput');
+      const clearSearchBtn = document.getElementById('btnClearSearch');
+
       const fromVal = fromEl ? fromEl.value : '';
       const toVal = toEl ? toEl.value : '';
+      const searchVal = searchEl ? searchEl.value.trim().toLowerCase() : '';
 
-      const filteredTx = state.transactions.filter(t => {
+      if (clearSearchBtn) {
+        if (searchVal.length > 0) {
+          clearSearchBtn.classList.remove('hidden');
+        } else {
+          clearSearchBtn.classList.add('hidden');
+        }
+      }
+
+      // 1. Filtra per periodo (influenza card totali e grafico)
+      const periodTx = state.transactions.filter(t => {
         if (fromVal && t.date < fromVal) return false;
         if (toVal && t.date > toVal) return false;
         return true;
@@ -470,7 +511,7 @@
       let entrate = 0, uscite = 0;
       const catTotals = {};
 
-      filteredTx.forEach(t => {
+      periodTx.forEach(t => {
         if (t.type === 'entrata') {
           entrate += t.amount;
         } else {
@@ -487,14 +528,24 @@
       if (txtUscite) txtUscite.innerText = `€ ${uscite.toFixed(2)}`;
       if (txtSaldo) txtSaldo.innerText = `€ ${(entrate - uscite).toFixed(2)}`;
 
+      // 2. Filtra per ricerca testuale nella tabella storico
+      const tableTx = periodTx.filter(t => {
+        if (!searchVal) return true;
+        const matchCat = (t.category || '').toLowerCase().includes(searchVal);
+        const matchNote = (t.note || '').toLowerCase().includes(searchVal);
+        const matchDate = (t.date || '').includes(searchVal);
+        const matchAmount = t.amount.toFixed(2).includes(searchVal);
+        return matchCat || matchNote || matchDate || matchAmount;
+      });
+
       const tbody = document.getElementById('txTableBody');
       if (tbody) {
         tbody.innerHTML = '';
         
-        if (filteredTx.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">Nessun movimento trovato per il periodo selezionato</td></tr>`;
+        if (tableTx.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">Nessun movimento trovato</td></tr>`;
         } else {
-          filteredTx.forEach(t => {
+          tableTx.forEach(t => {
             const isEntrata = t.type === 'entrata';
             tbody.innerHTML += `
               <tr class="hover:bg-gray-900/50">
@@ -571,6 +622,42 @@
         a.download = 'budget_backup.json';
         a.click();
       } catch(e) {}
+    }
+
+    function importJSON(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const imported = JSON.parse(e.target.result);
+          if (imported && Array.isArray(imported.transactions)) {
+            if (confirm(`Trovate ${imported.transactions.length} transazioni nel backup. Vuoi sostituire i dati attuali e ripristinarlo?`)) {
+              state.transactions = imported.transactions;
+              if (Array.isArray(imported.categories) && imported.categories.length > 0) {
+                state.categories = imported.categories;
+              }
+              try {
+                localStorage.setItem('bg_transactions', JSON.stringify(state.transactions));
+                localStorage.setItem('bg_categories', JSON.stringify(state.categories));
+              } catch(err) {}
+              
+              renderCategories();
+              renderDashboard();
+              alert('Backup ripristinato con successo!');
+              switchTab('dashboard');
+            }
+          } else {
+            alert('Il file selezionato non è un backup valido di Budget Familiare.');
+          }
+        } catch (err) {
+          alert('Errore nella lettura del file JSON: ' + err.message);
+        } finally {
+          event.target.value = '';
+        }
+      };
+      reader.readAsText(file);
     }
 
     function exportCSV() {
