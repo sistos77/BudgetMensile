@@ -187,13 +187,13 @@
             <tbody id="txTableBody" class="divide-y divide-gray-800"></tbody>
             <tfoot id="txTableFoot" class="bg-gray-900/90 border-t-2 border-gray-700 hidden">
               <tr>
-                <th colspan="2" id="txFilteredCount" class="p-3 text-xs sm:text-sm font-bold uppercase tracking-wider text-gray-300">
+                <td colspan="2" id="txFilteredCount" class="p-3 text-xs sm:text-sm font-bold uppercase tracking-wider text-gray-300">
                   Totale Filtrato
-                </th>
-                <th id="txFilteredTotal" class="p-3 text-right font-extrabold text-sm sm:text-base whitespace-nowrap">
+                </td>
+                <td id="txFilteredTotal" class="p-3 text-right font-extrabold text-sm sm:text-base whitespace-nowrap">
                   € 0.00
-                </th>
-                <th colspan="2" class="p-3"></th>
+                </td>
+                <td colspan="2" class="p-3"></td>
               </tr>
             </tfoot>
           </table>
@@ -462,4 +462,276 @@
         if (document.getElementById('editTxId').value == id) {
           cancelEdit();
         }
-        state.transactions = state
+        state.transactions = state.transactions.filter(t => t.id !== id);
+        saveAndRender();
+      }
+    }
+
+    function clearAllData() {
+      if (confirm("Sei sicuro di voler cancellare TUTTE le transazioni e ripristinare l'app? L'azione non è reversibile.")) {
+        try {
+          localStorage.removeItem('bg_transactions');
+          localStorage.removeItem('bg_categories');
+        } catch(e) {}
+        state.transactions = [];
+        state.categories = [...DEFAULT_CATEGORIES];
+        cancelEdit();
+        renderCategories();
+        renderDashboard();
+        alert("Tutti i dati sono stati cancellati con successo.");
+      }
+    }
+
+    function resetDateFilter() {
+      const f = document.getElementById('filterFrom');
+      const t = document.getElementById('filterTo');
+      if (f) f.value = '';
+      if (t) t.value = '';
+      renderDashboard();
+    }
+
+    function clearSearch() {
+      const s = document.getElementById('searchTxInput');
+      if (s) s.value = '';
+      renderDashboard();
+    }
+
+    function saveAndRender() {
+      state.transactions.sort((a, b) => {
+        if (b.date !== a.date) {
+          return b.date.localeCompare(a.date);
+        }
+        return b.id - a.id;
+      });
+
+      try {
+        localStorage.setItem('bg_transactions', JSON.stringify(state.transactions));
+      } catch(e) {}
+      renderDashboard();
+    }
+
+    function renderDashboard() {
+      const fromEl = document.getElementById('filterFrom');
+      const toEl = document.getElementById('filterTo');
+      const searchEl = document.getElementById('searchTxInput');
+      const clearSearchBtn = document.getElementById('btnClearSearch');
+
+      const fromVal = fromEl ? fromEl.value : '';
+      const toVal = toEl ? toEl.value : '';
+      const searchVal = searchEl ? searchEl.value.trim().toLowerCase() : '';
+
+      if (clearSearchBtn) {
+        if (searchVal.length > 0) {
+          clearSearchBtn.classList.remove('hidden');
+        } else {
+          clearSearchBtn.classList.add('hidden');
+        }
+      }
+
+      state.transactions.sort((a, b) => {
+        if (b.date !== a.date) {
+          return b.date.localeCompare(a.date);
+        }
+        return b.id - a.id;
+      });
+
+      const periodTx = state.transactions.filter(t => {
+        if (fromVal && t.date < fromVal) return false;
+        if (toVal && t.date > toVal) return false;
+        return true;
+      });
+
+      let entrate = 0, uscite = 0;
+      const catTotals = {};
+
+      periodTx.forEach(t => {
+        if (t.type === 'entrata') {
+          entrate += t.amount;
+        } else {
+          uscite += t.amount;
+          catTotals[t.category] = (catTotals[t.category] || 0) + t.amount;
+        }
+      });
+
+      const txtEntrate = document.getElementById('txtEntrate');
+      const txtUscite = document.getElementById('txtUscite');
+      const txtSaldo = document.getElementById('txtSaldo');
+
+      if (txtEntrate) txtEntrate.innerText = `€ ${entrate.toFixed(2)}`;
+      if (txtUscite) txtUscite.innerText = `€ ${uscite.toFixed(2)}`;
+      if (txtSaldo) txtSaldo.innerText = `€ ${(entrate - uscite).toFixed(2)}`;
+
+      const tableTx = periodTx.filter(t => {
+        if (!searchVal) return true;
+        const matchCat = (t.category || '').toLowerCase().includes(searchVal);
+        const matchNote = (t.note || '').toLowerCase().includes(searchVal);
+        const matchDate = (t.date || '').includes(searchVal);
+        const matchAmount = t.amount.toFixed(2).includes(searchVal);
+        return matchCat || matchNote || matchDate || matchAmount;
+      });
+
+      const tbody = document.getElementById('txTableBody');
+      const tfoot = document.getElementById('txTableFoot');
+      const filteredCountEl = document.getElementById('txFilteredCount');
+      const filteredTotalEl = document.getElementById('txFilteredTotal');
+
+      if (tbody) {
+        tbody.innerHTML = '';
+        
+        if (tableTx.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">Nessun movimento trovato</td></tr>`;
+          if (tfoot) tfoot.classList.add('hidden');
+        } else {
+          let filteredBalance = 0;
+
+          tableTx.forEach(t => {
+            const isEntrata = t.type === 'entrata';
+            filteredBalance += isEntrata ? t.amount : -t.amount;
+
+            tbody.innerHTML += `
+              <tr class="hover:bg-gray-900/50">
+                <td class="p-3 text-gray-400 whitespace-nowrap">${t.date}</td>
+                <td class="p-3 font-semibold text-gray-200">${t.category}</td>
+                <td class="p-3 text-right font-bold whitespace-nowrap ${isEntrata ? 'text-[#39ff14]' : 'text-[#ff007f]'}">
+                  ${isEntrata ? '+' : '-'} €${t.amount.toFixed(2)}
+                </td>
+                <td class="p-3 text-gray-400">${t.note || '-'}</td>
+                <td class="p-3 text-center whitespace-nowrap space-x-3">
+                  <button onclick="editTx(${t.id})" class="text-[#ff6600] hover:text-orange-400 font-medium">Modifica</button>
+                  <button onclick="deleteTx(${t.id})" class="text-red-500 hover:text-red-400 font-medium">Elimina</button>
+                </td>
+              </tr>`;
+          });
+
+          if (tfoot && filteredCountEl && filteredTotalEl) {
+            tfoot.classList.remove('hidden');
+            const labelMov = tableTx.length === 1 ? '1 movimento' : `${tableTx.length} movimenti`;
+            filteredCountEl.innerText = `Totale Filtrato (${labelMov})`;
+            
+            const sign = filteredBalance > 0 ? '+' : (filteredBalance < 0 ? '-' : '');
+            filteredTotalEl.innerText = `${sign} €${Math.abs(filteredBalance).toFixed(2)}`;
+            filteredTotalEl.className = `p-3 text-right font-extrabold text-sm sm:text-base whitespace-nowrap ${filteredBalance >= 0 ? 'text-[#39ff14]' : 'text-[#ff007f]'}`;
+          }
+        }
+      }
+
+      renderChart(catTotals);
+    }
+
+    function renderChart(catTotals) {
+      if (typeof Chart === 'undefined') return;
+      try {
+        const canvas = document.getElementById('chartCategory');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        
+        const labels = Object.keys(catTotals);
+        const data = Object.values(catTotals);
+
+        if (chartInstance) {
+          chartInstance.destroy();
+        }
+
+        const displayLabels = labels.length > 0 ? labels : ['Nessuna spesa'];
+        const displayData = labels.length > 0 ? data : [1];
+        const displayColors = labels.length > 0 
+          ? ['#ff007f', '#bf00ff', '#ff6600', '#39ff14', '#ccff00', '#9d4edd', '#ff0055', '#ff9e00']
+          : ['#1f2937'];
+
+        chartInstance = new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            labels: displayLabels,
+            datasets: [{
+              data: displayData,
+              backgroundColor: displayColors,
+              borderWidth: 2,
+              borderColor: '#111827'
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: { color: '#e2e8f0', padding: 15, font: { size: 12 } }
+              }
+            }
+          }
+        });
+      } catch (err) {
+        console.error("Errore grafico:", err);
+      }
+    }
+
+    function exportJSON() {
+      try {
+        const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'budget_backup.json';
+        a.click();
+      } catch(e) {}
+    }
+
+    function importJSON(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const imported = JSON.parse(e.target.result);
+          if (imported && Array.isArray(imported.transactions)) {
+            if (confirm(`Trovate ${imported.transactions.length} transazioni nel backup. Vuoi sostituire i dati attuali e ripristinarlo?`)) {
+              state.transactions = imported.transactions;
+              if (Array.isArray(imported.categories) && imported.categories.length > 0) {
+                state.categories = imported.categories;
+              }
+
+              state.transactions.sort((a, b) => {
+                if (b.date !== a.date) {
+                  return b.date.localeCompare(a.date);
+                }
+                return b.id - a.id;
+              });
+
+              try {
+                localStorage.setItem('bg_transactions', JSON.stringify(state.transactions));
+                localStorage.setItem('bg_categories', JSON.stringify(state.categories));
+              } catch(err) {}
+              
+              renderCategories();
+              renderDashboard();
+              alert('Backup ripristinato con successo!');
+              switchTab('dashboard');
+            }
+          } else {
+            alert('Il file selezionato non è un backup valido di Budget Familiare.');
+          }
+        } catch (err) {
+          alert('Errore nella lettura del file JSON: ' + err.message);
+        } finally {
+          event.target.value = '';
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function exportCSV() {
+      try {
+        let csv = 'Data,Tipo,Categoria,Note,Importo\n';
+        state.transactions.forEach(t => {
+          csv += `${t.date},${t.type},${t.category},"${t.note || ''}",${t.amount}\n`;
+        });
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'budget_movimenti.csv';
+        a.click();
+      } catch(e) {}
+    }
+  </script>
+</body>
+</html>
