@@ -151,5 +151,558 @@
         </div>
       </div>
 
-      <!-- Tabella Transazioni con Ricerca e Riepilogo (Ordine: Data | Categoria | Importo | Note | Azioni) -->
-      <div class="bg-dark
+      <!-- Tabella Transazioni con Ricerca e Riepilogo -->
+      <div class="bg-dark-card p-5 rounded-2xl border border-gray-800 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <h3 class="text-lg font-bold text-gray-200">Storico Transazioni</h3>
+          <div class="relative w-full sm:w-72">
+            <input 
+              type="text" 
+              id="searchTxInput" 
+              oninput="renderDashboard()" 
+              placeholder="Cerca per nota, categoria, importo..." 
+              class="w-full bg-gray-900 border border-gray-700 rounded-lg pl-3 pr-8 py-2 text-xs sm:text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#bf00ff] transition"
+            >
+            <button 
+              type="button" 
+              id="btnClearSearch" 
+              onclick="clearSearch()" 
+              class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#ff007f] text-sm font-bold"
+              title="Cancella ricerca"
+            >&times;</button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-gray-900 text-gray-400 uppercase text-xs border-b border-gray-800">
+              <tr>
+                <th class="p-3">Data</th>
+                <th class="p-3">Categoria</th>
+                <th class="p-3 text-right">Importo</th>
+                <th class="p-3">Note</th>
+                <th class="p-3 text-center">Azioni</th>
+              </tr>
+            </thead>
+            <tbody id="txTableBody" class="divide-y divide-gray-800"></tbody>
+            <tfoot id="txTableFoot" class="bg-gray-900/90 border-t-2 border-gray-700 hidden">
+              <tr>
+                <th colspan="2" id="txFilteredCount" class="p-3 text-xs sm:text-sm font-bold uppercase tracking-wider text-gray-300">
+                  Totale Filtrato
+                </th>
+                <th id="txFilteredTotal" class="p-3 text-right font-extrabold text-sm sm:text-base whitespace-nowrap">
+                  € 0.00
+                </th>
+                <th colspan="2" class="p-3"></th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Impostazioni -->
+    <div id="tabSettings" class="space-y-6 hidden">
+      <div class="bg-dark-card p-5 rounded-2xl neon-border-pink">
+        <h3 class="text-lg font-bold mb-4 text-[#ff007f]">Gestione Categorie Custom</h3>
+        <div class="flex flex-col sm:flex-row gap-2 mb-4">
+          <input type="text" id="newCatInput" placeholder="Es. Palestra, Animali..." class="flex-1 bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-white focus:border-[#ff007f] min-w-0">
+          <button onclick="addCategory()" class="bg-[#ff007f] text-white font-bold px-5 py-2.5 rounded-lg hover:bg-pink-600 shrink-0">Aggiungi</button>
+        </div>
+        <div id="categoriesList" class="flex flex-wrap gap-2"></div>
+      </div>
+
+      <div class="bg-dark-card p-5 rounded-2xl border border-gray-800 space-y-4">
+        <h3 class="text-lg font-bold text-gray-200">Gestione Dati & Backup</h3>
+        <div class="flex flex-wrap gap-3">
+          <button onclick="exportJSON()" class="bg-gray-800 border border-purple-500 text-[#bf00ff] font-semibold px-4 py-2 rounded-lg hover:bg-gray-700">Esporta JSON (Backup)</button>
+          
+          <button onclick="document.getElementById('importJsonInput').click()" class="bg-gray-800 border border-orange-500 text-[#ff6600] font-semibold px-4 py-2 rounded-lg hover:bg-gray-700">Importa JSON (Ripristina)</button>
+          <input type="file" id="importJsonInput" accept=".json,application/json" onchange="importJSON(event)" class="hidden">
+
+          <button onclick="exportCSV()" class="bg-gray-800 border border-green-500 text-[#39ff14] font-semibold px-4 py-2 rounded-lg hover:bg-gray-700">Esporta CSV (Excel)</button>
+          <button onclick="resetCategories()" class="bg-gray-800 border border-yellow-500 text-[#ccff00] font-semibold px-4 py-2 rounded-lg hover:bg-gray-700">Ripristina Categorie Default</button>
+        </div>
+
+        <div class="pt-4 border-t border-gray-800">
+          <h4 class="text-sm font-semibold text-red-400 mb-2">Zona Pericolosa</h4>
+          <button onclick="clearAllData()" class="bg-red-950 border border-red-600 text-red-400 font-bold px-4 py-2 rounded-lg hover:bg-red-900 transition">
+            Cancella Tutti i Dati
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const DEFAULT_CATEGORIES = ['Alimentari', 'Casa', 'Auto', 'Svago', 'Utenze', 'Istruzione', 'Spesa', 'Stipendio'];
+
+    let savedCategories = null;
+    try {
+      savedCategories = JSON.parse(localStorage.getItem('bg_categories'));
+    } catch (e) {
+      savedCategories = null;
+    }
+
+    if (!savedCategories || !Array.isArray(savedCategories) || savedCategories.length === 0) {
+      savedCategories = [...DEFAULT_CATEGORIES];
+      try { localStorage.setItem('bg_categories', JSON.stringify(savedCategories)); } catch(e) {}
+    }
+
+    let savedTransactions = [];
+    try {
+      savedTransactions = JSON.parse(localStorage.getItem('bg_transactions')) || [];
+    } catch (e) {
+      savedTransactions = [];
+    }
+
+    let state = {
+      transactions: savedTransactions,
+      categories: savedCategories,
+      pin: localStorage.getItem('bg_pin') || null
+    };
+
+    let chartInstance = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      try {
+        const txDate = document.getElementById('txDate');
+        if (txDate) txDate.valueAsDate = new Date();
+        if (state.pin) {
+          const pinScreen = document.getElementById('pinScreen');
+          if (pinScreen) pinScreen.classList.remove('hidden');
+        }
+        renderCategories();
+        renderDashboard();
+      } catch (err) {
+        console.error("Errore init:", err);
+      }
+    });
+
+    function checkPin() {
+      const val = document.getElementById('pinInput').value;
+      if (val === state.pin) {
+        document.getElementById('pinScreen').classList.add('hidden');
+      } else {
+        alert('PIN errato!');
+      }
+    }
+
+    function switchTab(tab) {
+      const dashTab = document.getElementById('tabDashboard');
+      const settTab = document.getElementById('tabSettings');
+      const btnDash = document.getElementById('btnTabDashboard');
+      const btnSett = document.getElementById('btnTabSettings');
+
+      if (!dashTab || !settTab) return;
+
+      if (tab === 'dashboard') {
+        dashTab.classList.remove('hidden');
+        settTab.classList.add('hidden');
+        if (btnDash) btnDash.className = "px-3 py-1.5 text-xs sm:text-sm rounded-lg font-semibold bg-[#ff007f] text-white shadow-[0_0_10px_rgba(255,0,127,0.5)]";
+        if (btnSett) btnSett.className = "px-3 py-1.5 text-xs sm:text-sm rounded-lg font-semibold bg-gray-800 text-gray-300 hover:text-white border border-gray-700";
+        renderDashboard();
+      } else {
+        dashTab.classList.add('hidden');
+        settTab.classList.remove('hidden');
+        if (btnSett) btnSett.className = "px-3 py-1.5 text-xs sm:text-sm rounded-lg font-semibold bg-[#ff007f] text-white shadow-[0_0_10px_rgba(255,0,127,0.5)]";
+        if (btnDash) btnDash.className = "px-3 py-1.5 text-xs sm:text-sm rounded-lg font-semibold bg-gray-800 text-gray-300 hover:text-white border border-gray-700";
+      }
+    }
+
+    function renderCategories() {
+      const select = document.getElementById('txCategory');
+      const list = document.getElementById('categoriesList');
+      if (!select || !list) return;
+      select.innerHTML = '';
+      list.innerHTML = '';
+
+      state.categories.forEach(cat => {
+        select.innerHTML += `<option value="${cat}">${cat}</option>`;
+        list.innerHTML += `
+          <span class="bg-gray-900 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-lg text-sm flex items-center space-x-2">
+            <span>${cat}</span>
+            <button onclick="removeCategory('${cat}')" class="text-red-500 hover:text-red-400 font-bold ml-1">&times;</button>
+          </span>`;
+      });
+      try { localStorage.setItem('bg_categories', JSON.stringify(state.categories)); } catch(e) {}
+    }
+
+    function addCategory() {
+      const input = document.getElementById('newCatInput');
+      if (!input) return;
+      const val = input.value.trim();
+      if (val && !state.categories.includes(val)) {
+        state.categories.push(val);
+        input.value = '';
+        renderCategories();
+      }
+    }
+
+    function removeCategory(cat) {
+      state.categories = state.categories.filter(c => c !== cat);
+      renderCategories();
+    }
+
+    function resetCategories() {
+      if (confirm("Vuoi ripristinare le categorie predefinite?")) {
+        state.categories = [...DEFAULT_CATEGORIES];
+        renderCategories();
+      }
+    }
+
+    function saveTransaction(e) {
+      e.preventDefault();
+      const editId = document.getElementById('editTxId').value;
+      const type = document.getElementById('txType').value;
+      const amount = parseFloat(document.getElementById('txAmount').value);
+      const category = document.getElementById('txCategory').value;
+      const date = document.getElementById('txDate').value;
+      const note = document.getElementById('txNote').value.trim();
+
+      if (editId) {
+        const index = state.transactions.findIndex(t => t.id == editId);
+        if (index !== -1) {
+          state.transactions[index] = {
+            id: Number(editId),
+            type,
+            amount,
+            category,
+            date,
+            note
+          };
+        }
+        cancelEdit();
+      } else {
+        const newTx = {
+          id: Date.now(),
+          type,
+          amount,
+          category,
+          date,
+          note
+        };
+        state.transactions.unshift(newTx);
+        document.getElementById('txAmount').value = '';
+        document.getElementById('txNote').value = '';
+      }
+      
+      saveAndRender();
+    }
+
+    function editTx(id) {
+      const tx = state.transactions.find(t => t.id === id);
+      if (!tx) return;
+
+      document.getElementById('editTxId').value = tx.id;
+      document.getElementById('txType').value = tx.type;
+      document.getElementById('txAmount').value = tx.amount;
+      
+      const catSelect = document.getElementById('txCategory');
+      if (!Array.from(catSelect.options).some(opt => opt.value === tx.category)) {
+        catSelect.innerHTML += `<option value="${tx.category}">${tx.category}</option>`;
+      }
+      catSelect.value = tx.category;
+      
+      document.getElementById('txDate').value = tx.date;
+      document.getElementById('txNote').value = tx.note || '';
+
+      const formContainer = document.getElementById('formContainer');
+      const formTitle = document.getElementById('formTitle');
+      const btnSubmit = document.getElementById('btnSubmitTx');
+      const btnCancel = document.getElementById('btnCancelEdit');
+
+      formContainer.classList.remove('border-[#ccff00]', 'shadow-[0_0_10px_rgba(204,255,0,0.2)]');
+      formContainer.classList.add('border-[#ff6600]', 'shadow-[0_0_15px_rgba(255,102,0,0.4)]');
+      
+      formTitle.innerText = 'Modifica Movimento';
+      formTitle.className = 'text-lg font-bold text-[#ff6600]';
+      
+      btnSubmit.innerText = 'SALVA MODIFICHE';
+      btnSubmit.className = 'w-full bg-[#ff6600] text-white font-bold py-3 rounded-lg hover:bg-orange-500 shadow-[0_0_10px_rgba(255,102,0,0.4)] transition';
+      
+      btnCancel.classList.remove('hidden');
+
+      formContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function cancelEdit() {
+      document.getElementById('editTxId').value = '';
+      document.getElementById('txAmount').value = '';
+      document.getElementById('txNote').value = '';
+      document.getElementById('txDate').valueAsDate = new Date();
+      document.getElementById('txType').value = 'uscita';
+
+      const formContainer = document.getElementById('formContainer');
+      const formTitle = document.getElementById('formTitle');
+      const btnSubmit = document.getElementById('btnSubmitTx');
+      const btnCancel = document.getElementById('btnCancelEdit');
+
+      formContainer.classList.remove('border-[#ff6600]', 'shadow-[0_0_15px_rgba(255,102,0,0.4)]');
+      formContainer.classList.add('border-[#ccff00]', 'shadow-[0_0_10px_rgba(204,255,0,0.2)]');
+      
+      formTitle.innerText = 'Nuovo Movimento';
+      formTitle.className = 'text-lg font-bold text-[#ccff00]';
+      
+      btnSubmit.innerText = 'AGGIUNGI MOVIMENTO';
+      btnSubmit.className = 'w-full bg-[#ccff00] text-black font-bold py-3 rounded-lg hover:bg-yellow-300 shadow-[0_0_10px_rgba(204,255,0,0.4)] transition';
+      
+      btnCancel.classList.add('hidden');
+    }
+
+    function deleteTx(id) {
+      if (document.getElementById('editTxId').value == id) {
+        cancelEdit();
+      }
+      state.transactions = state.transactions.filter(t => t.id !== id);
+      saveAndRender();
+    }
+
+    function clearAllData() {
+      if (confirm("Sei sicuro di voler cancellare TUTTE le transazioni e ripristinare l'app? L'azione non è reversibile.")) {
+        try {
+          localStorage.removeItem('bg_transactions');
+          localStorage.removeItem('bg_categories');
+        } catch(e) {}
+        state.transactions = [];
+        state.categories = [...DEFAULT_CATEGORIES];
+        cancelEdit();
+        renderCategories();
+        renderDashboard();
+        alert("Tutti i dati sono stati cancellati con successo.");
+      }
+    }
+
+    function resetDateFilter() {
+      const f = document.getElementById('filterFrom');
+      const t = document.getElementById('filterTo');
+      if (f) f.value = '';
+      if (t) t.value = '';
+      renderDashboard();
+    }
+
+    function clearSearch() {
+      const s = document.getElementById('searchTxInput');
+      if (s) s.value = '';
+      renderDashboard();
+    }
+
+    function saveAndRender() {
+      try {
+        localStorage.setItem('bg_transactions', JSON.stringify(state.transactions));
+      } catch(e) {}
+      renderDashboard();
+    }
+
+    function renderDashboard() {
+      const fromEl = document.getElementById('filterFrom');
+      const toEl = document.getElementById('filterTo');
+      const searchEl = document.getElementById('searchTxInput');
+      const clearSearchBtn = document.getElementById('btnClearSearch');
+
+      const fromVal = fromEl ? fromEl.value : '';
+      const toVal = toEl ? toEl.value : '';
+      const searchVal = searchEl ? searchEl.value.trim().toLowerCase() : '';
+
+      if (clearSearchBtn) {
+        if (searchVal.length > 0) {
+          clearSearchBtn.classList.remove('hidden');
+        } else {
+          clearSearchBtn.classList.add('hidden');
+        }
+      }
+
+      // 1. Filtra per periodo (influenza card totali e grafico)
+      const periodTx = state.transactions.filter(t => {
+        if (fromVal && t.date < fromVal) return false;
+        if (toVal && t.date > toVal) return false;
+        return true;
+      });
+
+      let entrate = 0, uscite = 0;
+      const catTotals = {};
+
+      periodTx.forEach(t => {
+        if (t.type === 'entrata') {
+          entrate += t.amount;
+        } else {
+          uscite += t.amount;
+          catTotals[t.category] = (catTotals[t.category] || 0) + t.amount;
+        }
+      });
+
+      const txtEntrate = document.getElementById('txtEntrate');
+      const txtUscite = document.getElementById('txtUscite');
+      const txtSaldo = document.getElementById('txtSaldo');
+
+      if (txtEntrate) txtEntrate.innerText = `€ ${entrate.toFixed(2)}`;
+      if (txtUscite) txtUscite.innerText = `€ ${uscite.toFixed(2)}`;
+      if (txtSaldo) txtSaldo.innerText = `€ ${(entrate - uscite).toFixed(2)}`;
+
+      // 2. Filtra per ricerca testuale nella tabella storico
+      const tableTx = periodTx.filter(t => {
+        if (!searchVal) return true;
+        const matchCat = (t.category || '').toLowerCase().includes(searchVal);
+        const matchNote = (t.note || '').toLowerCase().includes(searchVal);
+        const matchDate = (t.date || '').includes(searchVal);
+        const matchAmount = t.amount.toFixed(2).includes(searchVal);
+        return matchCat || matchNote || matchDate || matchAmount;
+      });
+
+      const tbody = document.getElementById('txTableBody');
+      const tfoot = document.getElementById('txTableFoot');
+      const filteredCountEl = document.getElementById('txFilteredCount');
+      const filteredTotalEl = document.getElementById('txFilteredTotal');
+
+      if (tbody) {
+        tbody.innerHTML = '';
+        
+        if (tableTx.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">Nessun movimento trovato</td></tr>`;
+          if (tfoot) tfoot.classList.add('hidden');
+        } else {
+          let filteredBalance = 0;
+
+          tableTx.forEach(t => {
+            const isEntrata = t.type === 'entrata';
+            filteredBalance += isEntrata ? t.amount : -t.amount;
+
+            tbody.innerHTML += `
+              <tr class="hover:bg-gray-900/50">
+                <td class="p-3 text-gray-400 whitespace-nowrap">${t.date}</td>
+                <td class="p-3 font-semibold text-gray-200">${t.category}</td>
+                <td class="p-3 text-right font-bold whitespace-nowrap ${isEntrata ? 'text-[#39ff14]' : 'text-[#ff007f]'}">
+                  ${isEntrata ? '+' : '-'} €${t.amount.toFixed(2)}
+                </td>
+                <td class="p-3 text-gray-400">${t.note || '-'}</td>
+                <td class="p-3 text-center whitespace-nowrap space-x-3">
+                  <button onclick="editTx(${t.id})" class="text-[#ff6600] hover:text-orange-400 font-medium">Modifica</button>
+                  <button onclick="deleteTx(${t.id})" class="text-red-500 hover:text-red-400 font-medium">Elimina</button>
+                </td>
+              </tr>`;
+          });
+
+          if (tfoot && filteredCountEl && filteredTotalEl) {
+            tfoot.classList.remove('hidden');
+            const labelMov = tableTx.length === 1 ? '1 movimento' : `${tableTx.length} movimenti`;
+            filteredCountEl.innerText = `Totale Filtrato (${labelMov})`;
+            
+            const sign = filteredBalance > 0 ? '+' : (filteredBalance < 0 ? '-' : '');
+            filteredTotalEl.innerText = `${sign} €${Math.abs(filteredBalance).toFixed(2)}`;
+            filteredTotalEl.className = `p-3 text-right font-extrabold text-sm sm:text-base whitespace-nowrap ${filteredBalance >= 0 ? 'text-[#39ff14]' : 'text-[#ff007f]'}`;
+          }
+        }
+      }
+
+      renderChart(catTotals);
+    }
+
+    function renderChart(catTotals) {
+      if (typeof Chart === 'undefined') return;
+      try {
+        const canvas = document.getElementById('chartCategory');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        
+        const labels = Object.keys(catTotals);
+        const data = Object.values(catTotals);
+
+        if (chartInstance) {
+          chartInstance.destroy();
+        }
+
+        const displayLabels = labels.length > 0 ? labels : ['Nessuna spesa'];
+        const displayData = labels.length > 0 ? data : [1];
+        const displayColors = labels.length > 0 
+          ? ['#ff007f', '#bf00ff', '#ff6600', '#39ff14', '#ccff00', '#9d4edd', '#ff0055', '#ff9e00']
+          : ['#1f2937'];
+
+        chartInstance = new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            labels: displayLabels,
+            datasets: [{
+              data: displayData,
+              backgroundColor: displayColors,
+              borderWidth: 2,
+              borderColor: '#111827'
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: { color: '#e2e8f0', padding: 15, font: { size: 12 } }
+              }
+            }
+          }
+        });
+      } catch (err) {
+        console.error("Errore grafico:", err);
+      }
+    }
+
+    function exportJSON() {
+      try {
+        const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'budget_backup.json';
+        a.click();
+      } catch(e) {}
+    }
+
+    function importJSON(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const imported = JSON.parse(e.target.result);
+          if (imported && Array.isArray(imported.transactions)) {
+            if (confirm(`Trovate ${imported.transactions.length} transazioni nel backup. Vuoi sostituire i dati attuali e ripristinarlo?`)) {
+              state.transactions = imported.transactions;
+              if (Array.isArray(imported.categories) && imported.categories.length > 0) {
+                state.categories = imported.categories;
+              }
+              try {
+                localStorage.setItem('bg_transactions', JSON.stringify(state.transactions));
+                localStorage.setItem('bg_categories', JSON.stringify(state.categories));
+              } catch(err) {}
+              
+              renderCategories();
+              renderDashboard();
+              alert('Backup ripristinato con successo!');
+              switchTab('dashboard');
+            }
+          } else {
+            alert('Il file selezionato non è un backup valido di Budget Familiare.');
+          }
+        } catch (err) {
+          alert('Errore nella lettura del file JSON: ' + err.message);
+        } finally {
+          event.target.value = '';
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function exportCSV() {
+      try {
+        let csv = 'Data,Tipo,Categoria,Note,Importo\n';
+        state.transactions.forEach(t => {
+          csv += `${t.date},${t.type},${t.category},"${t.note || ''}",${t.amount}\n`;
+        });
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'budget_movimenti.csv';
+        a.click();
+      } catch(e) {}
+    }
+  </script>
+</body>
+</html>
