@@ -109,9 +109,13 @@
 
       <!-- Form Movimenti & Grafico -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div class="bg-dark-card p-5 rounded-2xl border border-[#ccff00] lg:col-span-1 shadow-[0_0_10px_rgba(204,255,0,0.2)]">
-          <h3 class="text-lg font-bold mb-4 text-[#ccff00]">Nuovo Movimento</h3>
-          <form id="txForm" onsubmit="addTransaction(event)" class="space-y-4">
+        <div id="formContainer" class="bg-dark-card p-5 rounded-2xl border border-[#ccff00] lg:col-span-1 shadow-[0_0_10px_rgba(204,255,0,0.2)] transition-all">
+          <div class="flex justify-between items-center mb-4">
+            <h3 id="formTitle" class="text-lg font-bold text-[#ccff00]">Nuovo Movimento</h3>
+            <button type="button" id="btnCancelEdit" onclick="cancelEdit()" class="hidden text-xs text-gray-400 hover:text-white underline">Annulla</button>
+          </div>
+          <form id="txForm" onsubmit="saveTransaction(event)" class="space-y-4">
+            <input type="hidden" id="editTxId" value="">
             <div>
               <label class="block text-xs font-semibold text-gray-400 uppercase mb-1">Tipo</label>
               <select id="txType" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-white focus:border-[#ccff00]">
@@ -135,7 +139,7 @@
               <label class="block text-xs font-semibold text-gray-400 uppercase mb-1">Note (facoltativo)</label>
               <input type="text" id="txNote" placeholder="es. Spesa settimanale" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-white focus:border-[#ccff00]">
             </div>
-            <button type="submit" class="w-full bg-[#ccff00] text-black font-bold py-3 rounded-lg hover:bg-yellow-300 shadow-[0_0_10px_rgba(204,255,0,0.4)]">AGGIUNGI MOVIMENTO</button>
+            <button type="submit" id="btnSubmitTx" class="w-full bg-[#ccff00] text-black font-bold py-3 rounded-lg hover:bg-yellow-300 shadow-[0_0_10px_rgba(204,255,0,0.4)] transition">AGGIUNGI MOVIMENTO</button>
           </form>
         </div>
 
@@ -158,7 +162,7 @@
                 <th class="p-3">Categoria</th>
                 <th class="p-3">Note</th>
                 <th class="p-3 text-right">Importo</th>
-                <th class="p-3 text-center">Azione</th>
+                <th class="p-3 text-center">Azioni</th>
               </tr>
             </thead>
             <tbody id="txTableBody" class="divide-y divide-gray-800"></tbody>
@@ -313,23 +317,110 @@
       }
     }
 
-    function addTransaction(e) {
+    function saveTransaction(e) {
       e.preventDefault();
-      const newTx = {
-        id: Date.now(),
-        type: document.getElementById('txType').value,
-        amount: parseFloat(document.getElementById('txAmount').value),
-        category: document.getElementById('txCategory').value,
-        date: document.getElementById('txDate').value,
-        note: document.getElementById('txNote').value.trim()
-      };
-      state.transactions.unshift(newTx);
+      const editId = document.getElementById('editTxId').value;
+      const type = document.getElementById('txType').value;
+      const amount = parseFloat(document.getElementById('txAmount').value);
+      const category = document.getElementById('txCategory').value;
+      const date = document.getElementById('txDate').value;
+      const note = document.getElementById('txNote').value.trim();
+
+      if (editId) {
+        const index = state.transactions.findIndex(t => t.id == editId);
+        if (index !== -1) {
+          state.transactions[index] = {
+            id: Number(editId),
+            type,
+            amount,
+            category,
+            date,
+            note
+          };
+        }
+        cancelEdit();
+      } else {
+        const newTx = {
+          id: Date.now(),
+          type,
+          amount,
+          category,
+          date,
+          note
+        };
+        state.transactions.unshift(newTx);
+        document.getElementById('txAmount').value = '';
+        document.getElementById('txNote').value = '';
+      }
+      
       saveAndRender();
+    }
+
+    function editTx(id) {
+      const tx = state.transactions.find(t => t.id === id);
+      if (!tx) return;
+
+      document.getElementById('editTxId').value = tx.id;
+      document.getElementById('txType').value = tx.type;
+      document.getElementById('txAmount').value = tx.amount;
+      
+      const catSelect = document.getElementById('txCategory');
+      if (!Array.from(catSelect.options).some(opt => opt.value === tx.category)) {
+        catSelect.innerHTML += `<option value="${tx.category}">${tx.category}</option>`;
+      }
+      catSelect.value = tx.category;
+      
+      document.getElementById('txDate').value = tx.date;
+      document.getElementById('txNote').value = tx.note || '';
+
+      // Aggiorna grafica del form per modalità modifica
+      const formContainer = document.getElementById('formContainer');
+      const formTitle = document.getElementById('formTitle');
+      const btnSubmit = document.getElementById('btnSubmitTx');
+      const btnCancel = document.getElementById('btnCancelEdit');
+
+      formContainer.classList.remove('border-[#ccff00]', 'shadow-[0_0_10px_rgba(204,255,0,0.2)]');
+      formContainer.classList.add('border-[#ff6600]', 'shadow-[0_0_15px_rgba(255,102,0,0.4)]');
+      
+      formTitle.innerText = 'Modifica Movimento';
+      formTitle.className = 'text-lg font-bold text-[#ff6600]';
+      
+      btnSubmit.innerText = 'SALVA MODIFICHE';
+      btnSubmit.className = 'w-full bg-[#ff6600] text-white font-bold py-3 rounded-lg hover:bg-orange-500 shadow-[0_0_10px_rgba(255,102,0,0.4)] transition';
+      
+      btnCancel.classList.remove('hidden');
+
+      formContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function cancelEdit() {
+      document.getElementById('editTxId').value = '';
       document.getElementById('txAmount').value = '';
       document.getElementById('txNote').value = '';
+      document.getElementById('txDate').valueAsDate = new Date();
+      document.getElementById('txType').value = 'uscita';
+
+      const formContainer = document.getElementById('formContainer');
+      const formTitle = document.getElementById('formTitle');
+      const btnSubmit = document.getElementById('btnSubmitTx');
+      const btnCancel = document.getElementById('btnCancelEdit');
+
+      formContainer.classList.remove('border-[#ff6600]', 'shadow-[0_0_15px_rgba(255,102,0,0.4)]');
+      formContainer.classList.add('border-[#ccff00]', 'shadow-[0_0_10px_rgba(204,255,0,0.2)]');
+      
+      formTitle.innerText = 'Nuovo Movimento';
+      formTitle.className = 'text-lg font-bold text-[#ccff00]';
+      
+      btnSubmit.innerText = 'AGGIUNGI MOVIMENTO';
+      btnSubmit.className = 'w-full bg-[#ccff00] text-black font-bold py-3 rounded-lg hover:bg-yellow-300 shadow-[0_0_10px_rgba(204,255,0,0.4)] transition';
+      
+      btnCancel.classList.add('hidden');
     }
 
     function deleteTx(id) {
+      if (document.getElementById('editTxId').value == id) {
+        cancelEdit();
+      }
       state.transactions = state.transactions.filter(t => t.id !== id);
       saveAndRender();
     }
@@ -342,6 +433,7 @@
         } catch(e) {}
         state.transactions = [];
         state.categories = [...DEFAULT_CATEGORIES];
+        cancelEdit();
         renderCategories();
         renderDashboard();
         alert("Tutti i dati sono stati cancellati con successo.");
@@ -406,14 +498,15 @@
             const isEntrata = t.type === 'entrata';
             tbody.innerHTML += `
               <tr class="hover:bg-gray-900/50">
-                <td class="p-3 text-gray-400">${t.date}</td>
+                <td class="p-3 text-gray-400 whitespace-nowrap">${t.date}</td>
                 <td class="p-3 font-semibold text-gray-200">${t.category}</td>
                 <td class="p-3 text-gray-400">${t.note || '-'}</td>
-                <td class="p-3 text-right font-bold ${isEntrata ? 'text-[#39ff14] font-semibold' : 'text-[#ff007f] font-semibold'}">
+                <td class="p-3 text-right font-bold whitespace-nowrap ${isEntrata ? 'text-[#39ff14]' : 'text-[#ff007f]'}">
                   ${isEntrata ? '+' : '-'} €${t.amount.toFixed(2)}
                 </td>
-                <td class="p-3 text-center">
-                  <button onclick="deleteTx(${t.id})" class="text-red-500 hover:text-red-400">Elimina</button>
+                <td class="p-3 text-center whitespace-nowrap space-x-3">
+                  <button onclick="editTx(${t.id})" class="text-[#ff6600] hover:text-orange-400 font-medium">Modifica</button>
+                  <button onclick="deleteTx(${t.id})" class="text-red-500 hover:text-red-400 font-medium">Elimina</button>
                 </td>
               </tr>`;
           });
