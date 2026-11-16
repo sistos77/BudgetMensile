@@ -386,6 +386,14 @@
         document.getElementById('txAmount').value = '';
         document.getElementById('txNote').value = '';
       }
+
+      // Ordina sempre dalla più recente alla meno recente per data (e in subordine per ID)
+      state.transactions.sort((a, b) => {
+        if (b.date !== a.date) {
+          return b.date.localeCompare(a.date);
+        }
+        return b.id - a.id;
+      });
       
       saveAndRender();
     }
@@ -488,6 +496,14 @@
     }
 
     function saveAndRender() {
+      // Ordina sempre prima di salvare
+      state.transactions.sort((a, b) => {
+        if (b.date !== a.date) {
+          return b.date.localeCompare(a.date);
+        }
+        return b.id - a.id;
+      });
+
       try {
         localStorage.setItem('bg_transactions', JSON.stringify(state.transactions));
       } catch(e) {}
@@ -511,6 +527,14 @@
           clearSearchBtn.classList.add('hidden');
         }
       }
+
+      // Assicura che l'array sia sempre ordinato per data decrescente
+      state.transactions.sort((a, b) => {
+        if (b.date !== a.date) {
+          return b.date.localeCompare(a.date);
+        }
+        return b.id - a.id;
+      });
 
       // 1. Filtra per periodo (influenza card totali e grafico)
       const periodTx = state.transactions.filter(t => {
@@ -668,6 +692,15 @@
               if (Array.isArray(imported.categories) && imported.categories.length > 0) {
                 state.categories = imported.categories;
               }
+
+              // Ordina subito le transazioni importate dalla più recente alla meno recente
+              state.transactions.sort((a, b) => {
+                if (b.date !== a.date) {
+                  return b.date.localeCompare(a.date);
+                }
+                return b.id - a.id;
+              });
+
               try {
                 localStorage.setItem('bg_transactions', JSON.stringify(state.transactions));
                 localStorage.setItem('bg_categories', JSON.stringify(state.categories));
